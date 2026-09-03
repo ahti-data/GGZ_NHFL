@@ -117,27 +117,52 @@ ggz_load_geo <- function() {
 #' Reken de opgeslagen measures om naar optelbare grootheden.
 #'
 #' De database bewaart aandelen, gemiddelden en indexcijfers. Die zijn geen van
-#' alle optelbaar over gemeenten heen. Deze functie zet ze om naar de vier
-#' grootheden die dat wel zijn -- aantallen gebruikers, totale kosten, en de
-#' bijbehorende verwachte waarden -- zodat [ggz_aggregate()] kan sommeren.
+#' alle optelbaar over gemeenten heen. Deze functie zet ze om naar de grootheden
+#' die dat wel zijn -- aantallen gebruikers en totale kosten, geobserveerd en
+#' verwacht -- zodat [ggz_aggregate()] kan sommeren.
 #'
-#' De verwachte waarden volgen uit de index: een index is geobserveerd gedeeld
-#' door verwacht, dus verwacht = geobserveerd / index. Zie de waarschuwing bij
-#' [ggz_aggregate()].
+#' De verwachte waarden komen rechtstreeks uit de `comp_*`-kolommen. De NL-output
+#' bewaart die naast de geobserveerde `target_*`-waarden; de maptool zelf tekent
+#' ze als "Verwacht" tegenover "Geobserveerd" en berekent de index als
+#' `target / comp`.
+#'
+#' Ontbreken de `comp_*`-kolommen (een ouder extract), dan valt de functie terug
+#' op `verwacht = geobserveerd / index`. Dat is wiskundig hetzelfde maar
+#' onnauwkeuriger en onvollediger: `index_*` is voor aanzienlijk minder rijen
+#' gevuld dan `comp_*`, dus die route verliest gebieden.
 #'
 #' @param data Data frame uit [ggz_load_data()].
 #' @return Hetzelfde frame met de kolommen `gebruikers`, `kosten_totaal`,
-#'   `verwacht_gebruikers`, `verwacht_kosten_pg` en `verwacht_kosten_pc`.
+#'   `verwacht_gebruikers`, `verwacht_kosten_pc` en `verwacht_kosten_pg_totaal`.
 ggz_prepare <- function(data) {
   safe_div <- function(x, idx) ifelse(is.na(idx) | idx == 0, NA_real_, x / idx)
+
+  # Ontbreken de comp-kolommen, dan worden ze eerst gereconstrueerd uit
+  # target / index. Daarna loopt alles langs dezelfde formule. Dat is bewust:
+  # een aparte rekenweg voor de terugvaloptie ging eerder mis doordat de teller
+  # dan met geobserveerde en de noemer met verwachte gebruikers gewogen werd --
+  # twee verschillende noemers in een verhouding die er een hoort te hebben.
+  if (!all(c("comp_USE", "comp_COSTS", "comp_PCCOSTS") %in% names(data))) {
+    data <- data %>%
+      mutate(
+        comp_USE     = safe_div(.data$target_USE, .data$index_USE),
+        comp_COSTS   = safe_div(.data$target_COSTS, .data$index_COSTS),
+        comp_PCCOSTS = safe_div(.data$target_PCCOSTS, .data$index_PCCOSTS)
+      )
+  }
 
   data %>%
     mutate(
       gebruikers          = .data$target_USE * .data$n,
       kosten_totaal       = .data$target_PCCOSTS * .data$n,
-      verwacht_gebruikers = safe_div(.data$gebruikers, .data$index_USE),
-      verwacht_kosten_pg  = safe_div(.data$kosten_totaal, .data$index_COSTS),
-      verwacht_kosten_pc  = safe_div(.data$kosten_totaal, .data$index_PCCOSTS)
+      verwacht_gebruikers = .data$comp_USE * .data$n,
+      verwacht_kosten_pc  = .data$comp_PCCOSTS * .data$n,
+      # De verwachting voor kosten *per gebruiker* heeft een andere noemer dan
+      # die voor kosten per inwoner: het verwachte kostentotaal dat hoort bij de
+      # verwachte kosten per gebruiker maal het verwachte aantal gebruikers.
+      # Alleen zo deelt [ggz_aggregate()] straks teller en noemer die bij elkaar
+      # horen.
+      verwacht_kosten_pg_totaal = .data$comp_COSTS * .data$comp_USE * .data$n
     )
 }
 
@@ -163,7 +188,8 @@ ggz_suppress <- function(data, drempel = "<30") {
   if (cutoff == 0) return(out %>% mutate(onderdrukt = FALSE))
 
   waarde_cols <- c("gebruikers", "kosten_totaal", "verwacht_gebruikers",
-                   "verwacht_kosten_pg", "verwacht_kosten_pc",
+                   "verwacht_kosten_pg_totaal", "verwacht_kosten_pc",
+                   "comp_USE", "comp_COSTS", "comp_PCCOSTS",
                    "target_USE", "target_COSTS", "target_PCCOSTS",
                    "index_USE", "index_COSTS", "index_PCCOSTS")
   waarde_cols <- intersect(waarde_cols, names(out))
@@ -232,13 +258,13 @@ ggz_aggregate <- function(data, by, provincie_lookup, geo_jaar) {
       gebruikers          = sum(.data$gebruikers, na.rm = TRUE),
       kosten_totaal_sum   = sum(.data$kosten_totaal, na.rm = TRUE),
       verwacht_gebruikers = sum(.data$verwacht_gebruikers, na.rm = TRUE),
-      verwacht_kosten_pg  = sum(.data$verwacht_kosten_pg, na.rm = TRUE),
+      verwacht_kosten_pg_totaal = sum(.data$verwacht_kosten_pg_totaal, na.rm = TRUE),
       verwacht_kosten_pc  = sum(.data$verwacht_kosten_pc, na.rm = TRUE),
       .groups = "drop"
     ) %>%
     # Gebieden waar alles onderdrukt is leveren nullen op; die horen NA te zijn.
     mutate(across(c("gebruikers", "kosten_totaal_sum", "verwacht_gebruikers",
-                    "verwacht_kosten_pg", "verwacht_kosten_pc"),
+                    "verwacht_kosten_pg_totaal", "verwacht_kosten_pc"),
                   ~ ifelse(.x == 0, NA_real_, .x))) %>%
     mutate(
       relatief_aantal      = .data$gebruikers / .data$n,
@@ -246,9 +272,13 @@ ggz_aggregate <- function(data, by, provincie_lookup, geo_jaar) {
       kosten_totaal        = .data$kosten_totaal_sum,
       kosten_per_capita    = .data$kosten_totaal_sum / .data$n,
       kosten_per_gebruiker = .data$kosten_totaal_sum / .data$gebruikers,
-      index_gebruik        = .data$gebruikers          / .data$verwacht_gebruikers,
-      index_kosten_pg      = .data$kosten_totaal_sum   / .data$verwacht_kosten_pg,
-      index_kosten_pc      = .data$kosten_totaal_sum   / .data$verwacht_kosten_pc
+      index_gebruik        = .data$gebruikers        / .data$verwacht_gebruikers,
+      index_kosten_pc      = .data$kosten_totaal_sum / .data$verwacht_kosten_pc,
+      # Kosten per gebruiker: geobserveerde kosten per gebruiker gedeeld door de
+      # verwachte kosten per gebruiker -- elk met zijn eigen noemer, dus niet
+      # simpelweg de twee kostentotalen tegen elkaar.
+      index_kosten_pg      = (.data$kosten_totaal_sum / .data$gebruikers) /
+                             (.data$verwacht_kosten_pg_totaal / .data$verwacht_gebruikers)
     ) %>%
     select(-"kosten_totaal_sum")
 }

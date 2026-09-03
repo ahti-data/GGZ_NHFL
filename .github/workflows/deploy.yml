@@ -17,6 +17,7 @@ jobs:
       run: |
         mkdir -p deploy
         cp dashboard/app.R deploy/
+        cp dashboard/extract_ggz_zpm_server.R deploy/
         cp -r dashboard/data deploy/
         cp -r dashboard/utils deploy/
         cp -r dashboard/templates deploy/

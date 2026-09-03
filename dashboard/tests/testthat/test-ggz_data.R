@@ -18,7 +18,11 @@ mk_data <- function() {
     target_PCCOSTS = c(200, 200, 200),      # = USE * COSTS
     index_USE      = c(2.0, 1.0, 0.5),
     index_COSTS    = c(1.0, 2.0, 4.0),
-    index_PCCOSTS  = c(2.0, 2.0, 2.0)
+    index_PCCOSTS  = c(2.0, 2.0, 2.0),
+    # comp_* = verwachte waarden, zo gekozen dat index = target / comp klopt.
+    comp_USE       = c(0.10, 0.20, 0.40) / c(2.0, 1.0, 0.5),
+    comp_COSTS     = c(2000, 1000, 500)  / c(1.0, 2.0, 4.0),
+    comp_PCCOSTS   = c(200, 200, 200)    / c(2.0, 2.0, 2.0)
   )
 }
 
@@ -41,8 +45,33 @@ test_that("ggz_prepare rekent aandelen en gemiddelden terug naar optelbare aanta
   p <- ggz_prepare(mk_data())
   expect_equal(p$gebruikers, c(100, 100, 100))
   expect_equal(p$kosten_totaal, c(200000, 100000, 50000))
-  # verwacht = geobserveerd / index
+  # verwacht aantal gebruikers = comp_USE * n
   expect_equal(p$verwacht_gebruikers, c(50, 100, 200))
+})
+
+test_that("ggz_prepare gebruikt comp_* als die er zijn, en anders de index", {
+  met_comp <- ggz_prepare(mk_data())
+
+  # Zelfde invoer, maar zonder de comp-kolommen: dan valt hij terug op
+  # verwacht = geobserveerd / index. Dat hoort hetzelfde antwoord te geven.
+  zonder <- mk_data()
+  zonder <- zonder[, setdiff(names(zonder), c("comp_USE", "comp_COSTS", "comp_PCCOSTS"))]
+  via_index <- ggz_prepare(zonder)
+
+  expect_equal(met_comp$verwacht_gebruikers, via_index$verwacht_gebruikers)
+  expect_equal(met_comp$verwacht_kosten_pc, via_index$verwacht_kosten_pc)
+  expect_equal(met_comp$verwacht_kosten_pg_totaal, via_index$verwacht_kosten_pg_totaal)
+})
+
+test_that("de terugvaloptie overleeft een index van nul of NA", {
+  zonder <- mk_data()
+  zonder <- zonder[, setdiff(names(zonder), c("comp_USE", "comp_COSTS", "comp_PCCOSTS"))]
+  zonder$index_USE <- c(0, NA_real_, 0.5)
+
+  p <- ggz_prepare(zonder)
+  expect_true(is.na(p$verwacht_gebruikers[1]))   # deling door nul
+  expect_true(is.na(p$verwacht_gebruikers[2]))   # ontbrekende index
+  expect_equal(p$verwacht_gebruikers[3], 200)
 })
 
 test_that("aggregeren op gemeenteniveau reproduceert de invoer per gemeente", {

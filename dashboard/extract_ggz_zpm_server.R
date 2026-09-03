@@ -1,21 +1,30 @@
-# 01_extract_ggz_zpm.R
+# extract_ggz_zpm_server.R
 #
-# Haalt de GGZ ZPM-slice uit de NL-output database (PostgreSQL) en schrijft er
-# een klein bestand van voor het dashboard. Zie PLAN.md par. 3.
+# Serverversie van output_src/01_extract_ggz_zpm.R, bedoeld om op
+# healthinsights.ahti.nl te draaien -- de NL-output database is niet vanaf elke
+# werkplek bereikbaar, maar vanaf die server wel.
 #
-# Dit is bewust een smalle uitsnede: alleen level_type 'Gemeente', alleen de
-# jaren 2022-2024 en alleen de vier GGZ ZPM-uitkomsten. De maptool-database
-# bevat negen zorgdomeinen op drie geografische niveaus; daarvan komt hier
-# niets anders mee.
+# Wordt door de deploy-workflow meegekopieerd, zodat er niets in een terminal
+# geplakt hoeft te worden (een heredoc van deze lengte raakt in een SSH-sessie
+# vrijwel gegarandeerd verminkt). Draaien:
 #
-# LET OP -- eenmalig te draaien vanaf een machine MET databasetoegang. Vanaf een
-# willekeurige werkplek loopt de verbinding af in een timeout: de RDS security
-# group laat niet elk IP toe. Credentials komen uit .env in de repo-root
-# (zelfde formaat als maptool_v4/.env; .env staat in .gitignore).
+#   sudo docker exec shiny_rstudio Rscript /srv/shiny-server/GGZ_NHFL/extract_ggz_zpm_server.R
 #
-#   Rscript output_src/01_extract_ggz_zpm.R
+# Credentials komen uit de .env van de maptool, die al op de server staat; er
+# hoeft dus geen wachtwoord gekopieerd te worden.
 #
-# Uitvoer: dashboard/data/ggz_zpm_gemeente.rds
+# Uitvoer: /srv/shiny-server/GGZ_NHFL/data/ggz_zpm_gemeente.rds -- meteen op de
+# plek waar het dashboard hem verwacht, dus de synthetische stand-in is daarna
+# niet meer in gebruik.
+
+MAPTOOL_DIR <- "/srv/shiny-server/maptool_v4"
+OUT_FILE    <- "/srv/shiny-server/GGZ_NHFL/data/ggz_zpm_gemeente.rds"
+
+if (!dir.exists(MAPTOOL_DIR)) {
+  stop("Maptool-map niet gevonden op ", MAPTOOL_DIR,
+       " -- draait dit script wel op de server, binnen de shiny_rstudio-container?")
+}
+setwd(MAPTOOL_DIR)
 
 suppressMessages({
   library(DBI)
@@ -51,10 +60,9 @@ MEASURE_TYPES <- c(
   "index_USE", "index_COSTS", "index_PCCOSTS"
 )
 
-OUT_FILE <- file.path("dashboard", "data", "ggz_zpm_gemeente.rds")
 
 # --- Verbinding ---------------------------------------------------------------
-env_file <- file.path(getwd(), ".env")
+env_file <- file.path(MAPTOOL_DIR, ".env")
 if (file.exists(env_file)) readRenviron(env_file)
 
 pg_required <- c("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD")

@@ -93,6 +93,12 @@ rows <- lapply(seq_len(nrow(grid)), function(i) {
   idx_use  <- exp(rnorm(nrow(g), 0, 0.13))
   idx_cost <- exp(rnorm(nrow(g), 0, 0.11))
 
+  # comp_* zijn de verwachte waarden, precies zoals de NL-output ze bewaart.
+  # Ze worden hier zo geconstrueerd dat index = target / comp exact opgaat,
+  # zodat de aggregatielogica er echt op getoetst wordt.
+  comp_use  <- use / idx_use
+  comp_cost <- cost / idx_cost
+
   tibble::tibble(
     code            = g$code,
     jaar            = as.integer(y),
@@ -102,6 +108,9 @@ rows <- lapply(seq_len(nrow(grid)), function(i) {
     target_USE      = as.numeric(use),
     target_COSTS    = as.numeric(cost),
     target_PCCOSTS  = as.numeric(use * cost),  # per capita = aandeel x kosten p.g.
+    comp_USE        = as.numeric(comp_use),
+    comp_COSTS      = as.numeric(comp_cost),
+    comp_PCCOSTS    = as.numeric(comp_use * comp_cost),
     index_USE       = as.numeric(idx_use),
     index_COSTS     = as.numeric(idx_cost),
     index_PCCOSTS   = as.numeric(idx_use * idx_cost),
