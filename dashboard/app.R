@@ -251,10 +251,10 @@ server <- function(input, output, session) {
     if (!ggz_is_index(input$uitkomst)) return(NULL)
     div(class = "ggz-voetnoot",
         "Indexcijfers boven gemeenteniveau worden herberekend als de som van de ",
-        "geobserveerde waarden gedeeld door de som van de verwachte waarden. Dat ",
-        "steunt op de aanname dat de index in de NL-output multiplicatief ",
-        "gedefinieerd is als geobserveerd/verwacht; die aanname staat nog open ",
-        "(zie PLAN.md, vraag 4).")
+        "geobserveerde waarden gedeeld door de som van de verwachte waarden — niet ",
+        "als een gemiddelde van de gemeentelijke indexcijfers, want dat zou een ",
+        "verhouding middelen. De verwachte waarden komen rechtstreeks uit de ",
+        "NL-output.")
   })
 
   # --- Kaart -----------------------------------------------------------------

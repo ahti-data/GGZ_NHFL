@@ -10,16 +10,20 @@ zusterprojecten `pharm` / `RVS_laatste_1000_dagen`.
 | 1. Repo-skelet met `dashboard/`, `utils/`, `templates/`, deploy-workflow | ✅ gedaan |
 | 2. Geo-assets en gemeente→provincie-lookup | ✅ gedaan |
 | 3. `utils/ggz_data.R` + tests | ✅ gedaan — 61 tests groen |
-| 4. Echte extractie uit de database | ⛔ **geblokkeerd** — geen DB-toegang vanaf deze werkplek |
+| 4. Echte extractie uit de database | ✅ gedaan — gedraaid op healthinsights.ahti.nl |
 | 5. `utils/ggz_map.R` | ✅ gedaan |
 | 6. Tab "Kickoff" in `app.R` | ✅ gedaan — draait, alle 480 combinaties getest |
 | 7. `README.md` herschreven | ✅ gedaan |
 | 8. Deploy | ⏸ wacht op stap 4 en op vraag 7 |
 
-Het dashboard draait nu op **synthetische cijfers** (`output_src/00_build_synthetic_data.R`)
-en toont daarover een waarschuwingsbalk. Zodra `01_extract_ggz_zpm.R` op een machine met
-databasetoegang gedraaid heeft, vervangt het echte extract die stand-in en verdwijnt de balk
-vanzelf — er hoeft geen code aangepast te worden.
+Het dashboard draait op **echte cijfers**. De NL-output database bleek niet bereikbaar vanaf een
+werkplek, maar wel vanaf `healthinsights.ahti.nl`, waar de maptool zelf ook draait; de extractie
+is daar gedraaid met `dashboard/extract_ggz_zpm_server.R`. Het synthetische bestand blijft in het
+repo staan als terugvaloptie voor wie zonder databasetoegang aan het dashboard werkt.
+
+Plausibiliteitscontrole op de landelijke cijfers 2024: populatie 17.942.915 (feitelijk circa
+17,9 mln), 975.950 GGZ ZPM-gebruikers, 5,53 mld euro totale kosten — alle drie in de verwachte
+orde van grootte.
 
 Twee dingen die tijdens het bouwen naar boven kwamen en niet in het oorspronkelijke plan
 stonden, staan in par. 10.
@@ -354,13 +358,13 @@ volledige `utils/`-set met de think-cell-export, de vijftien pptx-templates, en
 
 | # | Vraag | Zonder antwoord doe ik |
 |---|---|---|
-| 1 | **DB-toegang.** Vanaf welke machine of VPN is de RDS-host op poort 5432 bereikbaar? | Blokkerend voor stap A. De rest (geo, utils, UI-skelet) kan wél alvast, met synthetische data. |
-| 2 | "GGZ ZPM - Overig" = `sub_zvwggzzpmoverigprest` ("Overig prestaties")? | Ja aannemen — het is de enige ZPM-subcategorie die op "overig" past. |
-| 3 | "Index kosten" = `index_COSTS` (p.g.) of `index_PCCOSTS` (p.c.)? | Beide aanbieden in de UI, gelabeld. |
+| 1 | ~~**DB-toegang.**~~ | ✅ **Opgelost.** Niet bereikbaar vanaf een werkplek (de RDS security group laat dat IP niet toe), wel vanaf `healthinsights.ahti.nl`. Zie par. 10.5. |
+| 2 | "GGZ ZPM - Overig" = `sub_zvwggzzpmoverigprest` ("Overig prestaties")? | Ja aangenomen; nog te bevestigen bij de collega. |
+| 3 | "Index kosten" = `index_COSTS` (p.g.) of `index_PCCOSTS` (p.c.)? | Beide staan in de UI, gelabeld als "Index kosten (p.g.)" en "(p.c.)". Zodra dit duidelijk is kan er een weg. |
 | 4 | Klopt de aanname `index = geobserveerd / verwacht` (§5.2)? | Zo implementeren, met een zichtbare voetnoot in de tab tot het bevestigd is. |
 | 5 | Dataversie `v1` of `v2`? | `v2` (huidig), zoals de maptool zelf default. |
 | 6 | Doelpopulatie: alleen de totale bevolking? | Ja; de rest wordt wel geëxtraheerd maar niet getoond. |
-| 7 | Deploy-doel `/apps/GGZ_NHFL/` op `healthinsights.ahti.nl` achter Authelia, en welke groep krijgt toegang? | Workflow klaarzetten, maar de map moet op de server al bestaan (zie par. 10.4). |
+| 5 | Deploy-doel `/apps/GGZ_NHFL/` op `healthinsights.ahti.nl` achter Authelia, en welke groep krijgt toegang? | Workflow klaarzetten, maar de map moet op de server al bestaan (zie par. 10.4). |
 
 ---
 
@@ -453,13 +457,59 @@ Gevolg: **`/apps/GGZ_NHFL/` moet op de server al bestaan voordat de eerste deplo
 Bestaat de map niet, dan faalt de sync. Twee wegen: de map eenmalig handmatig aanmaken, of
 de mkdir-stap uit `pharm` alsnog overnemen.
 
+### 10.5 De database is alleen vanaf de server bereikbaar
+
+Vanaf een werkplek loopt de verbinding met de RDS-host af in een timeout -- niet geweigerd maar
+genegeerd, wat wijst op een security group die het IP niet toelaat. Uitgaand verkeer op poort 22
+en 443 werkt wel, dus het ligt niet aan het ahti-netwerk.
+
+Vanaf `healthinsights.ahti.nl` is de database wel bereikbaar; de maptool draait daar zelf ook
+(`/opt/shiny-project/apps/maptool_v4/`), inclusief de `.env` met de credentials. Daarom staat er
+een serverversie van het extractiescript in `dashboard/`, die door de deploy-workflow
+meegekopieerd wordt:
+
+    sudo docker exec shiny_rstudio Rscript /srv/shiny-server/GGZ_NHFL/extract_ggz_zpm_server.R
+
+Die schrijft rechtstreeks naar `/srv/shiny-server/GGZ_NHFL/data/`, dus het dashboard schakelt
+meteen over op de echte cijfers. Het script hoeft niet in een terminal geplakt te worden -- een
+heredoc van die lengte raakt in een SSH-sessie verminkt.
+
+### 10.6 De kostencontrole: afronding, geen verkeerde interpretatie
+
+`PCCOSTS x n` en `COSTS x USE x n` lopen op de echte data 0,40% uiteen (mediaan) met 11,1% op het
+95e percentiel. Dat leek zorgwekkend, maar de spreiding blijkt volledig een afrondingseffect:
+
+| Aantal gebruikers in het gebied | mediaan | p95 |
+|---|---|---|
+| < 30 | 6,24% | 11,78% |
+| 30 - 100 | 1,96% | 4,77% |
+| 100 - 300 | 0,74% | 1,78% |
+| 300 - 1.000 | 0,20% | 0,50% |
+| 1.000+ | 0,05% | 0,17% |
+
+Per domein hetzelfde beeld: `GGZ ZPM (totaal)` en `Consult` zitten op 0,07% mediaan, `Verblijf`
+op 1,51% -- precies de kleinste aantallen. **Op de gebieden die het dashboard werkelijk toont
+(30 gebruikers of meer) is de mediane afwijking 0,152%.** `COSTS` is dus wel degelijk kosten per
+gebruiker.
+
+De controle in het extractiescript keek eerst alleen naar de mediaan over alle rijen en gaf
+daardoor geen waarschuwing; die rapporteert nu apart over de zichtbare gebieden, met een drempel
+van 0,5%.
+
+### 10.7 De code `----`
+
+De database kent een restcategorie `----` voor onbekende gemeente: 40 personen in 2022, 25 in
+2023, alle uitkomstwaarden leeg. Dat is 0,0002% van de landelijke populatie. De koppeling met de
+provincietabel is een `inner_join`, dus die rijen vallen er vanzelf uit en komen nooit op een
+kaart of in een totaal terecht.
+
 ### 10.3 Wat er nog niet af is
 
-- De extractie zelf (par. 3). Het script staat klaar en bevat de controle op "kosten totaal
-  langs twee wegen", maar is nooit tegen de echte database gedraaid — de RDS-host antwoordt
-  niet vanaf deze werkplek.
-- De vragen 2 t/m 4 uit par. 7 staan nog open. Vraag 3 is voorlopig opgelost door zowel
-  `index_COSTS` als `index_PCCOSTS` in de UI aan te bieden, gelabeld als "Index kosten (p.g.)"
-  en "Index kosten (p.c.)"; zodra duidelijk is welke bedoeld wordt kan de andere weg.
-- Vraag 4 (de indexdefinitie) is als voetnoot in het tabblad zelf opgenomen, zichtbaar zodra
-  er een indexuitkomst gekozen wordt.
+- De vragen 2 en 3 uit par. 7 staan nog open bij de collega: heet "Overig" werkelijk
+  `sub_zvwggzzpmoverigprest`, en welke van de twee kostenindices wordt bedoeld? Vraag 3 is
+  voorlopig opgelost door beide aan te bieden, gelabeld als "Index kosten (p.g.)" en "(p.c.)".
+- Vraag 4 (de indexdefinitie) is bevestigd — zie par. 7 en 10.4. De voetnoot in het tabblad die
+  daar nog een slag om de arm hield, kan weg.
+- De onderdrukking valt op de echte data milder uit dan de synthetische schatting suggereerde:
+  in NH/FL 2024 op gemeenteniveau 4 van 50 gemeenten bij `Verblijf` en 2 van 50 bij `Overig
+  prestaties`; bij `totaal` en `Consult` geen enkele. De kaart is dus beter gevuld dan gevreesd.

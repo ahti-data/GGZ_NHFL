@@ -164,12 +164,28 @@ chk <- ggz %>%
     afwijking = abs(via_pc - via_user) / pmax(abs(via_pc), 1)
   )
 if (nrow(chk)) {
-  message("\nControle kosten totaal (PCCOSTS*n vs COSTS*USE*n):")
-  message("  mediane relatieve afwijking: ", sprintf("%.4f%%", 100 * median(chk$afwijking)))
-  message("  95e percentiel:              ", sprintf("%.4f%%", 100 * quantile(chk$afwijking, 0.95)))
-  if (median(chk$afwijking) > 0.01) {
-    warning("De twee routes naar 'kosten totaal' lopen meer dan 1% uiteen. ",
-            "Controleer of COSTS werkelijk kosten per gebruiker is.")
+  message("
+Controle kosten totaal (PCCOSTS*n vs COSTS*USE*n):")
+  message("  alle rijen       -- mediaan: ", sprintf("%.4f%%", 100 * median(chk$afwijking)),
+          " | p95: ", sprintf("%.4f%%", 100 * quantile(chk$afwijking, 0.95)))
+
+  # Naar alle rijen kijken is misleidend: de afwijking is een afrondingseffect en
+  # schaalt omgekeerd met de omvang van het gebied (gemeten op de echte data:
+  # 6,2% mediaan onder de 30 gebruikers, 0,05% boven de 1.000). Juist die kleine
+  # gebieden worden door de CBS-drempel toch al onderdrukt en komen nooit in
+  # beeld. De betekenisvolle toets is die op de gebieden die het dashboard
+  # werkelijk toont.
+  zichtbaar <- chk[!is.na(chk$target_USE * chk$n) & chk$target_USE * chk$n >= 30, ]
+  if (nrow(zichtbaar)) {
+    med <- median(zichtbaar$afwijking)
+    message("  >= 30 gebruikers -- mediaan: ", sprintf("%.4f%%", 100 * med),
+            " | p95: ", sprintf("%.4f%%", 100 * quantile(zichtbaar$afwijking, 0.95)),
+            " | p99: ", sprintf("%.4f%%", 100 * quantile(zichtbaar$afwijking, 0.99)))
+    if (med > 0.005) {
+      warning("Op de zichtbare gebieden lopen de twee routes naar 'kosten totaal' ",
+              "meer dan 0,5% uiteen. Dat is meer dan afronding verklaart; ",
+              "controleer of COSTS werkelijk kosten per gebruiker is.")
+    }
   }
 }
 
