@@ -1,72 +1,115 @@
 # GGZ_NHFL
 
-## Overview
+Onderzoek van het Amsterdam health & technology institute (ahti) naar het gebruik en de kosten
+van de GGZ onder het zorgprestatiemodel (ZPM) in Noord-Holland en Flevoland, afgezet tegen de
+rest van Nederland.
 
-This repository bundle appears to be a placeholder or minimal upload for a project named **GGZ_NHFL**. Based on the provided context, there is no project description, no source file previews, and no generated outputs included in the bundle.
+Dit repo bevat op dit moment de **kickoff-versie van het dashboard**: één tabblad met de
+kaartweergaven die voor de projectstart gevraagd zijn. Er komen later meer tabbladen bij.
 
-What can be inferred:
-- The repository is intended to support a data-driven workflow.
-- It likely relies on external CBS datasets, but no specific dataset names were provided in the upload context.
-- No source code summary is available, so the repository currently cannot be described in detail beyond its project name and empty bundle metadata.
+## Wat er in het dashboard zit
 
-## Linked Datasets
+Vier GGZ ZPM-domeinen (totaal, consult, overige prestaties, verblijf) over de jaren
+2022–2024, met zeven uitkomstmaten, op vijf gebiedsindelingen:
 
-No linked CBS datasets were provided in the bundle metadata.
+| Kaartweergave | Gebieden |
+|---|---|
+| Nederland — provincies | 12 |
+| Nederland — NH/FL vs. rest | 2 |
+| Noord-Holland & Flevoland — geheel | 1 |
+| Noord-Holland & Flevoland — provincies | 2 |
+| Noord-Holland & Flevoland — gemeenten | 50 (2023) |
 
-If datasets are added later, this section should describe:
-- **Which CBS datasets are used**
-- **What each dataset contributes**
-- **How the datasets relate to the project goal**
+Uitkomstmaten: relatief aantal gebruikers, totaal aantal gebruikers, kosten totaal, kosten per
+gebruiker, kosten per capita, index gebruik en index kosten.
 
-Example of the kind of value datasets typically add:
-- Demographic context
-- Regional or municipal breakdowns
-- Time-series trends
-- Socioeconomic indicators
-- Health, labor, or population statistics
+Bij de kaart horen een PNG-download en een Excel-download van de onderliggende tabel. De
+think-cell-export uit het dashboardtemplate blijft beschikbaar in `dashboard/utils/` voor de
+grafiektabbladen die hierna komen, maar wordt bij een kaart niet aangeboden.
 
-## Repository Structure
+## Databron
 
-Based on the provided upload context, the bundle currently contains no visible source files or output artifacts.
+De cijfers komen uit de NL-output database (PostgreSQL), dezelfde bron als de maptool. Daaruit
+wordt een smalle uitsnede gehaald: alleen gemeenteniveau, alleen 2022–2024, alleen de vier GGZ
+ZPM-uitkomsten. Zie [PLAN.md](PLAN.md) voor de volledige onderbouwing.
 
-Expected structure for a completed repository might include:
-- `src/` — source code for data processing or analysis
-- `data/` — input datasets or references
-- `notebooks/` — exploratory analysis or reporting
-- `outputs/` — generated tables, figures, or exports
-- `README.md` — project documentation
+Alle cijfers zijn geaggregeerd en niet tot personen herleidbaar. Gebieden met te weinig
+gebruikers worden onderdrukt (standaard: minder dan 30), conform de CBS-uitvoerregels.
 
-## Source Code Summary
+## Repostructuur
 
-No source files were provided in the bundle metadata, so there is no code to summarize.
+```
+output_src/
+  00_build_synthetic_data.R      verzonnen cijfers, om zonder DB te kunnen bouwen
+  01_extract_ggz_zpm.R           de echte extractie uit PostgreSQL
+  02_build_geo_assets.R          kaartlagen uit maptool_v4
+  03_build_gemeente_provincie.R  gemeente -> provincie lookup (CBS)
+dashboard/
+  app.R                          UI en serverlogica
+  data/                          extract, kaartlagen, lookup, huisstijl
+  utils/ggz_data.R               laden, onderdrukken, aggregeren
+  utils/ggz_map.R                bins, legenda, leaflet, PNG-export
+  utils/*.R                      think-cell/slide/favorites uit het template
+  templates/                     think-cell pptx-templates
+  tests/testthat/                testthat-tests
+```
 
-When source files are added, this section should explain:
-- What the code does
-- How it processes the datasets
-- Whether it cleans, merges, analyzes, or visualizes data
-- What the main entry points or scripts are
+## Aan de slag
 
-## Output Artifacts
+De drie voorbereidende scripts draaien vanuit de repo-root en hoeven maar één keer:
 
-No output files were included in the bundle.
+```bash
+Rscript output_src/03_build_gemeente_provincie.R
+```
 
-If outputs are generated later, this section should list items such as:
-- Tables or CSV exports
-- Charts or figures
-- Reports or notebooks
-- Model results or summaries
+```bash
+Rscript output_src/02_build_geo_assets.R
+```
 
-## Next Steps
+```bash
+Rscript output_src/01_extract_ggz_zpm.R
+```
 
-To make this repository useful and self-documenting, consider adding:
+Het laatste script vraagt om databasetoegang en credentials in `.env` (zelfde formaat als
+`maptool_v4/.env`; `.env` staat in `.gitignore`). De NL-output database is niet vanaf elke
+werkplek bereikbaar — zonder toegang loopt de verbinding af in een timeout.
 
-- **A project description** explaining the goal of GGZ_NHFL
-- **CBS dataset names** and a short note on what each one contributes
-- **Source code files** with comments or a brief script summary
-- **Generated outputs** so users can see the results of the workflow
-- **Usage instructions** describing how to run the analysis or reproduce outputs
+Zolang het echte extract ontbreekt, valt het dashboard terug op een synthetisch bestand en
+toont het daarover een waarschuwing. Dat bestand maak je zo:
 
-If you want, I can also turn this into a more polished README once you provide:
-- the CBS dataset names,
-- the source file previews,
-- and any output file names.
+```bash
+Rscript output_src/00_build_synthetic_data.R
+```
+
+> **Let op:** die cijfers zijn verzonnen. Ze dienen alleen om het dashboard te kunnen bouwen en
+> testen, en horen nooit in een deliverable of in een gesprek met een opdrachtgever.
+
+Het dashboard starten:
+
+```bash
+Rscript -e "shiny::runApp('dashboard/app.R')"
+```
+
+De tests draaien:
+
+```bash
+Rscript -e "setwd('dashboard/tests'); source('testthat.R')"
+```
+
+## Afhankelijkheden
+
+```r
+install.packages(c("shiny", "dplyr", "ggplot2", "tidyr", "tibble", "sf", "leaflet",
+                   "rmapshaper", "colourpicker", "DT", "writexl", "jsonlite",
+                   "filelock", "testthat", "DBI", "RPostgres"))
+```
+
+## Deployment
+
+De workflow in `.github/workflows/` synchroniseert `dashboard/{app.R,data,utils,templates}`
+naar `/apps/GGZ_NHFL/` op de Shiny-server. Het doelpad staat rechtstreeks in de workflow,
+zoals in `RVS_laatste_1000_dagen`.
+Toegang wordt server-side geregeld via Authelia, niet via shinymanager in de app zelf.
+
+Deployen kan pas nadat het echte extract in `dashboard/data/` staat — anders wordt een
+dashboard met verzonnen cijfers gepubliceerd.

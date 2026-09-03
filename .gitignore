@@ -1,0 +1,25 @@
+# Databasecredentials -- nooit committen (zie output_src/01_extract_ggz_zpm.R)
+.env
+
+# History files
+.Rhistory
+.RData
+.Ruserdata
+
+# RStudio
+.Rproj.user/
+*.Rproj
+
+# Runtime state van het dashboard: favorieten, exportgeschiedenis en via de UI
+# geuploade templates. Blijft bewust buiten git en buiten de deploy-sync, zodat
+# het een herdeploy overleeft.
+dashboard/state/
+dashboard/temp/
+
+# R output
+*.Rout
+*.Rout.fail
+
+# Lokale editorconfiguratie
+.claude/
+Rplots.pdf
