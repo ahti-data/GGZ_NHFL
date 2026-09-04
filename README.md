@@ -101,8 +101,14 @@ Rscript -e "setwd('dashboard/tests'); source('testthat.R')"
 ```r
 install.packages(c("shiny", "dplyr", "ggplot2", "tidyr", "tibble", "sf", "leaflet",
                    "rmapshaper", "colourpicker", "DT", "writexl", "jsonlite",
-                   "filelock", "testthat", "DBI", "RPostgres"))
+                   "filelock", "testthat", "DBI", "RPostgres", "ragg", "png"))
 ```
+
+`ragg` is niet optioneel in de praktijk: zonder dat pakket kan de PNG-download van
+de kaart een ondoorzichtige zwarte achtergrond krijgen in plaats van een transparante,
+op elk systeem waar R geen goede Cairo-ondersteuning heeft gecompileerd (vaak het
+geval in een minimale Docker-server). Zie `utils/ggz_map.R` (`ggz_ggsave_transparent()`)
+en PLAN.md par. 10.8.
 
 ## Deployment
 

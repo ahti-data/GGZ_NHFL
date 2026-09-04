@@ -41,6 +41,14 @@ GGZ_LOOKUP    <- read.csv(file.path("data", "gemeente_provincie.csv"),
                           encoding = "UTF-8")
 GGZ_SYNTHETIC <- ggz_is_synthetic()
 
+# Zonder 'ragg' kan de PNG-kaartexport op dit systeem een opaak zwarte
+# achtergrond krijgen in plaats van een transparante -- zie
+# ggz_ggsave_transparent() in utils/ggz_map.R. Dat gebeurt alleen op een
+# systeem zonder goede Cairo-ondersteuning en is daarom niet overal te zien;
+# een banner in de UI maakt het zichtbaar in plaats van een regel in de
+# serverlogs die niemand leest.
+GGZ_RAGG_ONTBREEKT <- !requireNamespace("ragg", quietly = TRUE)
+
 # Dataversie en doelpopulatie liggen voor de kickoff vast op de standaard van de
 # maptool. Beide zitten wel in het extract, dus een later tabblad kan ze
 # openstellen zonder nieuwe databaseronde (PLAN.md par. 7, vragen 5 en 6).
@@ -101,6 +109,14 @@ ui <- fluidPage(
             "de werking van het dashboard te kunnen tonen en zeggen niets over ",
             "de werkelijkheid. Draai ", code("output_src/01_extract_ggz_zpm.R"),
             " vanaf een machine met databasetoegang om ze te vervangen.")
+      },
+      if (GGZ_RAGG_ONTBREEKT) {
+        div(class = "ggz-waarschuwing",
+            strong("Let op: het R-package 'ragg' ontbreekt op deze server. "),
+            "De PNG-download van de kaart kan daardoor een ondoorzichtig zwarte ",
+            "achtergrond krijgen in plaats van een transparante. Installeer ",
+            code("ragg"), " (", code("install.packages(\"ragg\")"), ") om dit ",
+            "op te lossen.")
       },
       sidebarLayout(
         sidebarPanel(
@@ -341,8 +357,10 @@ server <- function(input, output, session) {
                              titel = kaart_titel(), ondertitel = kaart_ondertitel())
       # Transparante achtergrond: de kaart is bedoeld om op een dia of in een
       # document geplakt te worden, waar een wit blok eromheen stoort.
-      ggplot2::ggsave(file, plot, device = "png", width = 10, height = 9,
-                      dpi = 200, bg = "transparent")
+      # ggz_ggsave_transparent() kiest zelf een apparaat dat alpha echt
+      # ondersteunt -- gewone ggsave(bg="transparent") kan op een server zonder
+      # Cairo alles zwart wegschrijven in plaats van transparant.
+      ggz_ggsave_transparent(file, plot, width = 10, height = 9, dpi = 200)
     }
   )
 

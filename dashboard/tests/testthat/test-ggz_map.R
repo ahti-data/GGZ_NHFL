@@ -154,3 +154,72 @@ test_that("ggz_index_js_conditie dekt precies de indexuitkomsten", {
     expect_false(grepl(paste0("'", u, "'"), ja, fixed = TRUE))
   }
 })
+
+test_that("ggz_ggsave_transparent schrijft een PNG met een echt alfakanaal", {
+  skip_if_not_installed("ragg")
+  skip_if_not_installed("png")
+  skip_if_not_installed("sf")
+
+  vierkant <- sf::st_sfc(sf::st_polygon(list(rbind(
+    c(4, 52), c(5, 52), c(5, 53), c(4, 53), c(4, 52)))), crs = 4326)
+  laag <- sf::st_sf(gebied = c("a", "b"), waarde = c(1, 2), geometry = c(vierkant, vierkant))
+
+  p <- ggplot2::ggplot(laag) +
+    ggplot2::geom_sf(ggplot2::aes(fill = waarde)) +
+    ggplot2::theme(
+      plot.background  = ggplot2::element_rect(fill = "transparent", colour = NA),
+      panel.background = ggplot2::element_rect(fill = "transparent", colour = NA)
+    )
+
+  f <- tempfile(fileext = ".png")
+  on.exit(unlink(f), add = TRUE)
+  ggz_ggsave_transparent(f, p, width = 4, height = 3, dpi = 72)
+
+  expect_true(file.exists(f))
+  arr <- png::readPNG(f)
+  expect_equal(dim(arr)[3], 4)  # RGBA, geen RGB
+
+  # De hoeken liggen buiten het getekende vlak en horen dus echt transparant te
+  # zijn (alfa 0) -- niet stiekem opaak zwart, wat precies het gerapporteerde
+  # probleem was op een apparaat zonder goede alfa-ondersteuning.
+  hoogte <- dim(arr)[1]; breedte <- dim(arr)[2]
+  hoeken <- list(c(1, 1), c(1, breedte), c(hoogte, 1), c(hoogte, breedte))
+  for (h in hoeken) expect_equal(arr[h[1], h[2], 4], 0)
+})
+
+test_that("ggz_ggsave_transparent gebruikt ragg als dat beschikbaar is", {
+  skip_if_not_installed("ragg")
+  # Geen device-argument nodig van de aanroeper -- de functie kiest zelf.
+  expect_true(is.function(ragg::agg_png))
+})
+
+test_that("de terugvalweg zonder ragg waarschuwt in plaats van stil te falen", {
+  skip_if_not_installed("sf")
+
+  vierkant <- sf::st_sfc(sf::st_polygon(list(rbind(
+    c(4, 52), c(5, 52), c(5, 53), c(4, 53), c(4, 52)))), crs = 4326)
+  laag <- sf::st_sf(gebied = "a", geometry = vierkant)
+  p <- ggplot2::ggplot(laag) + ggplot2::geom_sf()
+
+  f <- tempfile(fileext = ".png")
+  on.exit(unlink(f), add = TRUE)
+
+  # requireNamespace() wordt binnen ggz_ggsave_transparent gemockt zodat 'ragg'
+  # als niet-beschikbaar telt, ongeacht of dit systeem het pakket wel heeft --
+  # zo test dit de terugvalweg in plaats van de systeemstatus van dit systeem.
+  # ggz_ggsave_transparent roept requireNamespace() maar op een manier aan
+  # (met package = "ragg"), dus de mock hoeft niets anders te onderscheiden;
+  # een aanroep naar de oorspronkelijke functie binnen de mock zou, doordat
+  # local_mocked_bindings de binding in het hele base-pakket vervangt, zichzelf
+  # blijven aanroepen.
+  testthat::local_mocked_bindings(
+    requireNamespace = function(package, ...) FALSE,
+    .package = "base"
+  )
+
+  expect_warning(
+    ggz_ggsave_transparent(f, p, width = 2, height = 2, dpi = 72),
+    "ragg"
+  )
+  expect_true(file.exists(f))
+})

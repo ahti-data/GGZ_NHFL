@@ -340,6 +340,52 @@ ggz_leaflet <- function(geo_layer, agg, uitkomst, palette_data) {
       "function(el, x) { this.getContainer().style.backgroundColor = 'white'; }")
 }
 
+#' Schrijf een ggplot naar een PNG met een echt transparante achtergrond.
+#'
+#' `ggsave(..., bg = "transparent")` is niet overal genoeg: "transparent" is
+#' de kleur RGB (0,0,0) met alpha 0, en op een grafisch apparaat dat geen
+#' semi-transparantie ondersteunt laat R de alpha stilzwijgend vallen -- dan
+#' wordt "transparant" gewoon opaak ZWART. Dat gebeurt niet bij elke
+#' R-installatie: op een werkplek met een volledige Cairo-build (zoals hier)
+#' werkt `bg = "transparent"` gewoon, maar op een minimale Docker-server zonder
+#' `libcairo2` kan diezelfde aanroep alles -- achtergrond, legendavlak, en de
+#' vlakken rond elk legendablokje -- als zwart wegzetten, waardoor de hele
+#' kaart en legenda te donker ogen. Zie PLAN.md voor waar dit gemeld is.
+#'
+#' `ragg::agg_png` is de enige hier vertrouwde weg: het is een op zichzelf
+#' staande renderer (geen systeembibliotheek nodig, dus onafhankelijk van wat
+#' er op een specifieke server toevallig geinstalleerd is) en getest op
+#' precies dit punt. Een voor de hand liggend alternatief,
+#' `grDevices::png(type = "cairo")`, is bewust NIET als tussenstap opgenomen:
+#' op de ontwikkelmachine waar dit geschreven is -- met `capabilities("cairo")
+#' == TRUE` -- leverde die aanroep via `ggsave()` een RGB-PNG zonder
+#' alphakanaal op, dus zonder enige transparantie. Zo'n stap zou de illusie
+#' van een vangnet geven zonder er een te zijn.
+#'
+#' Is `ragg` niet geinstalleerd, dan valt deze functie terug op gewone
+#' `ggsave()` en waarschuwt ze expliciet: op een systeem zonder goede
+#' alpha-ondersteuning kan "transparant" dan als opaak zwart wegschrijven --
+#' precies het gemelde probleem, waarbij niet alleen de achtergrond maar ook
+#' de legenda en de kaartkleuren te donker oogden.
+#'
+#' @param file Doelbestand.
+#' @param plot ggplot-object.
+#' @param width,height Afmetingen in inches.
+#' @param dpi Resolutie.
+ggz_ggsave_transparent <- function(file, plot, width, height, dpi) {
+  if (requireNamespace("ragg", quietly = TRUE)) {
+    ggplot2::ggsave(file, plot, device = ragg::agg_png, width = width,
+                    height = height, dpi = dpi, units = "in", bg = "transparent")
+  } else {
+    warning("Package 'ragg' niet beschikbaar -- de transparante achtergrond ",
+            "kan op dit systeem als opaak zwart wegschrijven, met te donker ",
+            "ogende kleuren tot gevolg. Installeer 'ragg' om dit te garanderen: ",
+            "install.packages('ragg').")
+    ggplot2::ggsave(file, plot, device = "png", width = width, height = height,
+                    dpi = dpi, units = "in", bg = "transparent")
+  }
+}
+
 #' Statische kaart voor de PNG-download.
 #'
 #' Losse ggplot-versie van dezelfde kaart, met titel, ondertitel en bronvermelding

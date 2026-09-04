@@ -503,6 +503,37 @@ De database kent een restcategorie `----` voor onbekende gemeente: 40 personen i
 provincietabel is een `inner_join`, dus die rijen vallen er vanzelf uit en komen nooit op een
 kaart of in een totaal terecht.
 
+### 10.8 De PNG-export kan zwart uitvallen zonder Cairo
+
+Terugkoppeling van de collega na deploy: in de gedownloade PNG waren de legenda en de
+kaartkleuren "allemaal donker", niet de gekozen kleuren.
+
+De oorzaak zat niet in de kleurlogica -- die testte al goed, zowel headless als in de
+`ggz_static_map()`-uitvoer die eerder gedeeld is. Het zat in `ggsave(..., bg = "transparent")`
+zelf. De R-kleur `"transparent"` is RGB (0,0,0) met alpha 0. Op een grafisch apparaat dat geen
+semi-transparantie ondersteunt laat R de alphawaarde stilzwijgend vallen, en dan wordt
+"transparant" gewoon **opaak zwart**. Of dat gebeurt hangt af van wat er in de R-installatie
+gecompileerd is (`capabilities("cairo")`), niet van de code -- op de ontwikkelmachine hier stond
+dat toevallig aan, dus het probleem was hier niet te reproduceren; op een minimale
+Docker-server zoals de `shiny_rstudio`-container is dat allerminst gegarandeerd.
+
+Er is bewust géén tussenstap `grDevices::png(type = "cairo")` toegevoegd als vangnet: die bleek
+op de ontwikkelmachine zelf, ondanks `capabilities("cairo") == TRUE`, een RGB-PNG zonder
+alphakanaal op te leveren via `ggsave()` -- dus zonder enige transparantie. Dat zou de illusie
+van een vangnet geven zonder er een te zijn.
+
+**Fix** (`utils/ggz_map.R`, `ggz_ggsave_transparent()`): de PNG-export gebruikt nu expliciet
+`ragg::agg_png` -- een op zichzelf staande renderer die geen systeembibliotheek nodig heeft en
+dus niet afhankelijk is van wat er op een specifieke server toevallig geinstalleerd staat.
+Ontbreekt `ragg`, dan valt de functie terug op gewone `ggsave()` met een waarschuwing, en toont
+`app.R` daarnaast een banner in de UI (naar het model van de synthetische-data-waarschuwing) --
+dat soort dingen hoort zichtbaar te zijn, niet begraven in een serverlog.
+
+`ragg` staat nu in de installatielijst in README.md. **Nog te doen: controleren of `ragg` al op
+de server staat, en zo niet, installeren** (`sudo docker exec shiny_rstudio Rscript -e
+"install.packages('ragg')"`). Zonder dat pakket blijft de kwetsbaarheid bestaan, al waarschuwt
+het dashboard er dan wel zichtbaar over.
+
 ### 10.3 Wat er nog niet af is
 
 - De vragen 2 en 3 uit par. 7 staan nog open bij de collega: heet "Overig" werkelijk
