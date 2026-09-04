@@ -101,3 +101,56 @@ test_that("ggz_map_bounds omsluit de laag", {
   expect_equal(b$lng1, 4); expect_equal(b$lat1, 52)
   expect_equal(b$lng2, 5); expect_equal(b$lat2, 53)
 })
+
+test_that("de lage kleur van de indexschaal is instelbaar", {
+  # Standaard rood, maar overschrijfbaar -- dat was de wens van de collega.
+  standaard <- ggz_palette(c(0.8, 1.2), is_index = TRUE)
+  expect_equal(standaard$palette(0.8), GGZ_KLEUR_INDEX_LAAG)
+
+  eigen <- ggz_palette(c(0.8, 1.2), is_index = TRUE, kleur_laag = "#20153E")
+  expect_equal(eigen$palette(0.8), "#20153E")
+  # De hoge kant blijft ongemoeid.
+  expect_equal(eigen$palette(1.2), GGZ_KLEUR_HOOG)
+})
+
+test_that("de middenkleur van de indexschaal is instelbaar", {
+  p <- ggz_palette(c(0.8, 0.9, 1.1, 1.2), is_index = TRUE,
+                   kleur_laag = "#EE3124", kleur_midden = "#00A55D",
+                   kleur_hoog = "#009DDC")
+  # De klasse die tegen 1,00x aan ligt, loopt naar de middenkleur toe.
+  kleuren <- p$palette(c(0.8, 0.99, 1.01, 1.2))
+  expect_equal(kleuren[1], "#EE3124")
+  expect_equal(kleuren[4], "#009DDC")
+  expect_false(anyNA(kleuren))
+})
+
+test_that("een gewone schaal blijft van licht naar de gekozen kleur lopen", {
+  p <- ggz_palette(c(0.05, 0.09))
+  expect_equal(p$palette(0.05), GGZ_KLEUR_LAAG)
+  expect_equal(p$palette(0.09), GGZ_KLEUR_HOOG)
+})
+
+test_that("de legendablokjes rekken via flex, niet via een percentagehoogte", {
+  # Een percentagehoogte klapt dicht als de ouderketen geen definitieve hoogte
+  # oplevert; dan blijven er acht randen van 1px over die als een zwarte streep
+  # ogen. Dit is precies wat de collega zag.
+  html <- as.character(ggz_legend_html(ggz_palette(c(0.05, 0.07, 0.09)),
+                                       "relatief_aantal"))
+  expect_match(html, "align-self:stretch")
+  expect_match(html, "min-height")
+  expect_false(grepl("width:20px; height:100%", html, fixed = TRUE))
+})
+
+test_that("ggz_index_js_conditie dekt precies de indexuitkomsten", {
+  ja <- ggz_index_js_conditie()
+  nee <- ggz_index_js_conditie(negatie = TRUE)
+
+  for (u in GGZ_INDEX_UITKOMSTEN) expect_match(ja, u, fixed = TRUE)
+  expect_match(ja, ">= 0", fixed = TRUE)
+  expect_match(nee, "< 0", fixed = TRUE)
+
+  # De niet-indexuitkomsten mogen er niet in voorkomen.
+  for (u in setdiff(GGZ_UITKOMSTEN, GGZ_INDEX_UITKOMSTEN)) {
+    expect_false(grepl(paste0("'", u, "'"), ja, fixed = TRUE))
+  }
+})

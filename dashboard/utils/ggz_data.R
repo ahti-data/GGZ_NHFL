@@ -59,6 +59,22 @@ NHFL_PROVINCIES <- c("Noord-Holland", "Flevoland")
 #' Uitkomsten die een verhouding zijn en dus nooit met n vermenigvuldigd worden.
 GGZ_INDEX_UITKOMSTEN <- c("index_gebruik", "index_kosten_pg", "index_kosten_pc")
 
+#' JavaScript-conditie voor een `conditionalPanel`: is de gekozen uitkomst een
+#' index?
+#'
+#' Wordt uit [GGZ_INDEX_UITKOMSTEN] opgebouwd in plaats van in de UI uitgetypt,
+#' zodat de lijst op een plek staat; komt er ooit een indexuitkomst bij, dan
+#' volgen de panelen vanzelf.
+#'
+#' @param negatie Geef de conditie voor het omgekeerde geval (geen index).
+#' @param input_id Id van de uitkomst-keuzelijst.
+#' @return Een string met een JavaScript-expressie.
+ggz_index_js_conditie <- function(negatie = FALSE, input_id = "uitkomst") {
+  lijst <- paste(sprintf("'%s'", GGZ_INDEX_UITKOMSTEN), collapse = ", ")
+  sprintf("[%s].indexOf(input.%s) %s 0", lijst, input_id,
+          if (negatie) "<" else ">=")
+}
+
 # ---- Geo-jaar ----------------------------------------------------------------
 
 #' Geo-jaar bij een datajaar.

@@ -64,10 +64,14 @@ ui <- fluidPage(
     }
     /* De legenda schaalt mee met de kaarthoogte. Shiny schuift een eigen div
        tussen .ggz-legenda en de gerenderde HTML, dus die tussenlaag moet de
-       hoogte doorgeven -- anders klapt de height:100% van de kleurblokjes
-       dicht tot een streepje. */
+       hoogte doorgeven. De kleurblokjes zelf rekken via flex-stretch en niet
+       via een percentagehoogte (zie ggz_legend_html), zodat ze ook overeind
+       blijven als deze keten in een browser anders uitpakt. */
     .ggz-legenda { height: 560px; padding: 8px 0; display: flex; flex-direction: column; }
-    .ggz-legenda > .shiny-html-output { flex: 1; min-height: 0; }
+    .ggz-legenda > .shiny-html-output {
+      flex: 1 1 auto; min-height: 240px; display: flex; flex-direction: column;
+    }
+    .ggz-legenda > .shiny-html-output > div { flex: 1 1 auto; }
     .ggz-legenda-titel {
       font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 10px;
     }
@@ -122,11 +126,27 @@ ui <- fluidPage(
           hr(),
           colourpicker::colourInput("kleur_hoog", "Kleur (hoogste waarde)",
                                     value = GGZ_KLEUR_HOOG),
-          colourpicker::colourInput("kleur_laag", "Kleur (laagste waarde)",
-                                    value = GGZ_KLEUR_LAAG),
+          # De onderkant van de schaal betekent iets anders per soort uitkomst en
+          # krijgt daarom een eigen kiezer per soort, in plaats van een gedeelde
+          # kiezer die bij het wisselen bijgewerkt wordt. Zo hoeft er geen waarde
+          # naar de browser en weer terug voordat de kaart klopt -- dat gaf een
+          # kaart die het eerste moment nog in de oude kleuren stond -- en
+          # onthoudt elke schaal bovendien zijn eigen keuze.
+          conditionalPanel(
+            condition = ggz_index_js_conditie(negatie = TRUE),
+            colourpicker::colourInput("kleur_laag", "Kleur (laagste waarde)",
+                                      value = GGZ_KLEUR_LAAG)
+          ),
+          conditionalPanel(
+            condition = ggz_index_js_conditie(),
+            colourpicker::colourInput("kleur_index_laag", "Kleur (minder dan verwacht)",
+                                      value = GGZ_KLEUR_INDEX_LAAG),
+            colourpicker::colourInput("kleur_midden", "Kleur (op 1,00x)",
+                                      value = GGZ_KLEUR_MIDDEN)
+          ),
           helpText(
-            "Bij een indexuitkomst is 1,00 het scharnierpunt: rood is minder dan ",
-            "verwacht, de gekozen kleur is meer dan verwacht."
+            "Bij een indexuitkomst is 1,00x het scharnierpunt: de kaart loopt van ",
+            "'minder dan verwacht' via de middenkleur naar 'meer dan verwacht'."
           )
         ),
 
@@ -196,11 +216,15 @@ server <- function(input, output, session) {
   })
 
   palette_data <- reactive({
+    is_index <- ggz_is_index(input$uitkomst)
+    # Elke schaalsoort leest zijn eigen kiezer; de andere blijft ongemoeid staan.
+    laag <- if (is_index) input$kleur_index_laag else input$kleur_laag
     ggz_palette(
       agg_data()[[input$uitkomst]],
-      is_index     = ggz_is_index(input$uitkomst),
-      kleur_laag   = input$kleur_laag,
-      kleur_hoog   = input$kleur_hoog
+      is_index     = is_index,
+      kleur_laag   = laag %||% NULL,
+      kleur_hoog   = input$kleur_hoog %||% GGZ_KLEUR_HOOG,
+      kleur_midden = input$kleur_midden %||% GGZ_KLEUR_MIDDEN
     )
   })
 
@@ -315,8 +339,10 @@ server <- function(input, output, session) {
       }
       plot <- ggz_static_map(geo_layer(), agg_data(), input$uitkomst, pd,
                              titel = kaart_titel(), ondertitel = kaart_ondertitel())
+      # Transparante achtergrond: de kaart is bedoeld om op een dia of in een
+      # document geplakt te worden, waar een wit blok eromheen stoort.
       ggplot2::ggsave(file, plot, device = "png", width = 10, height = 9,
-                      dpi = 200, bg = "white")
+                      dpi = 200, bg = "transparent")
     }
   )
 

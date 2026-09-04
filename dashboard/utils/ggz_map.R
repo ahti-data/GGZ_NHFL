@@ -27,13 +27,25 @@ GGZ_KLEUR_GEEN_DATA  <- "#D9D9D9"
 #'
 #' @param values Numerieke vector met de te tekenen waarden.
 #' @param is_index Is dit een indexuitkomst?
-#' @param kleur_laag,kleur_hoog,kleur_midden Kleuren voor het palet.
+#' @param kleur_laag,kleur_hoog,kleur_midden Kleuren voor het palet. Bij een
+#'   indexschaal is `kleur_laag` de kleur voor "minder dan verwacht" en
+#'   `kleur_midden` die op het scharnierpunt 1,00x. Alle drie zijn in de UI
+#'   instelbaar; [GGZ_KLEUR_INDEX_LAAG] is enkel de standaardwaarde die de UI
+#'   invult zodra er een indexuitkomst gekozen wordt.
 #' @return Lijst met `bins`, `palette` (een leaflet-kleurfunctie), `error` en
 #'   `message`. Bij te weinig variatie is `error` TRUE en `palette` NULL.
 ggz_palette <- function(values, is_index = FALSE,
-                        kleur_laag = GGZ_KLEUR_LAAG,
+                        kleur_laag = NULL,
                         kleur_hoog = GGZ_KLEUR_HOOG,
                         kleur_midden = GGZ_KLEUR_MIDDEN) {
+  # De lage kleur betekent iets anders per soort schaal en heeft dus een andere
+  # standaard: bij een gewone schaal het lichtste eind van een oplopende reeks,
+  # bij een indexschaal "minder dan verwacht". Zou hier altijd het lichtgrijs
+  # gelden, dan vielen bij een index de lage en de middenkleur samen en werd de
+  # hele onderkant van de schaal een egaal vlak.
+  if (is.null(kleur_laag)) {
+    kleur_laag <- if (is_index) GGZ_KLEUR_INDEX_LAAG else GGZ_KLEUR_LAAG
+  }
   vals <- values[!is.na(values)]
   if (length(vals) == 0) {
     return(list(bins = NULL, palette = NULL, error = TRUE,
@@ -94,7 +106,7 @@ ggz_palette <- function(values, is_index = FALSE,
     # rood via grijs naar blauw loopt hoort grijs te zijn bij 1,00x -- ook als de
     # klassen ongelijk over beide zijden verdeeld zijn.
     kleuren_onder <- if (onder > 0) {
-      grDevices::colorRampPalette(c(GGZ_KLEUR_INDEX_LAAG, kleur_midden))(onder + 1)[seq_len(onder)]
+      grDevices::colorRampPalette(c(kleur_laag, kleur_midden))(onder + 1)[seq_len(onder)]
     } else character(0)
     kleuren_boven <- if (boven > 0) {
       grDevices::colorRampPalette(c(kleur_midden, kleur_hoog))(boven + 1)[-1]
@@ -184,16 +196,26 @@ ggz_legend_html <- function(palette_data, uitkomst) {
   kleuren <- vapply(seq_len(length(bins) - 1),
                     function(i) pal((bins[i] + bins[i + 1]) / 2), character(1))
 
+  # De kleurvlakken rekken mee via `align-self: stretch`, niet via `height: 100%`.
+  # Een percentagehoogte moet zich verhouden tot een ouder met een *definitieve*
+  # hoogte, en die keten loopt hier door een div die Shiny zelf om de uitvoer
+  # heen zet. Lost die keten niet op, dan vallen alle vlakken terug op nul
+  # hoogte en houd je acht randen van 1px over: samen een zwarte streep in
+  # plaats van een legenda. De min-height is de laatste vangnetregel.
   blokjes <- paste(vapply(rev(seq_along(kleuren)), function(i) {
-    sprintf(paste0("<div style='flex:1; display:flex; align-items:center;'>",
-                   "<div style='background-color:%s; width:20px; height:100%%;",
-                   " border:1px solid rgba(0,0,0,0.15);'></div>",
-                   "<span style='margin-left:8px; font-size:12px;'>%s</span></div>"),
+    sprintf(paste0("<div style='flex:1 1 0; display:flex; align-items:stretch;",
+                   " min-height:16px;'>",
+                   "<div style='background-color:%s; width:20px; flex:0 0 20px;",
+                   " align-self:stretch; border:1px solid rgba(0,0,0,0.15);",
+                   " box-sizing:border-box;'></div>",
+                   "<span style='margin-left:8px; font-size:12px;",
+                   " align-self:center;'>%s</span></div>"),
             kleuren[i], labels[i])
   }, character(1)), collapse = "")
 
   shiny::HTML(paste0(
-    "<div style='height:100%; display:flex; flex-direction:row; align-items:stretch;'>",
+    "<div style='height:100%; min-height:240px; display:flex;",
+    " flex-direction:row; align-items:stretch;'>",
     "<div style='display:flex; flex-direction:column; align-items:center;",
     " justify-content:flex-start; margin-right:8px;'>",
     "<div style='width:0; height:0; border-left:5px solid transparent;",
@@ -201,8 +223,8 @@ ggz_legend_html <- function(palette_data, uitkomst) {
     " margin-bottom:5px;'></div>",
     "<div style='writing-mode:vertical-rl; transform:rotate(180deg);",
     " text-align:center; font-size:13px; font-weight:bold;'>", meer, "</div></div>",
-    "<div style='display:flex; flex-direction:column; justify-content:stretch;",
-    " height:100%;'>", blokjes, "</div>",
+    "<div style='display:flex; flex-direction:column; flex:1 1 auto;",
+    " align-self:stretch;'>", blokjes, "</div>",
     "<div style='display:flex; flex-direction:column; align-items:center;",
     " justify-content:flex-end; margin-left:8px;'>",
     "<div style='writing-mode:vertical-rl; text-align:center; font-size:13px;",
@@ -398,6 +420,13 @@ ggz_static_map <- function(geo_layer, agg, uitkomst, palette_data, titel,
       legend.position = "right",
       legend.title  = ggplot2::element_text(size = 11, face = "bold"),
       legend.text   = ggplot2::element_text(size = 9),
-      plot.margin   = ggplot2::margin(16, 16, 16, 16)
+      plot.margin   = ggplot2::margin(16, 16, 16, 16),
+      # Transparante achtergrond, zodat de kaart op een gekleurde dia geplakt
+      # kan worden zonder wit blok eromheen. ggsave() krijgt bg = "transparent"
+      # mee; zonder deze theme-instellingen tekent ggplot alsnog witte vlakken.
+      plot.background   = ggplot2::element_rect(fill = "transparent", colour = NA),
+      panel.background  = ggplot2::element_rect(fill = "transparent", colour = NA),
+      legend.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+      legend.key        = ggplot2::element_rect(fill = "transparent", colour = NA)
     )
 }
